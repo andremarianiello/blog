@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Well-Composed - Generic Singletons</title>
+  <link rel="stylesheet" href="../css/default.css" />
+  <link rel="icon" href="../images/favicon.png" />
+</head>
+
+<body>
+  <header>
+    <div class="logo">
+      <a href="../">Well-Composed</a>
+    </div>
+    <nav>
+      <a href="../">Home</a>
+      <a href="../about.html">About</a>
+      <a href="../contact.html">Contact</a>
+      <a href="../archive.html">All Posts</a>
+    </nav>
+  </header>
+
+  <main role="main">
+    <h1>Generic Singletons</h1>
+    <article>
+    <section class="header">
+        Posted on December 27, 2024
+        
+    </section>
+    <section>
+        <p>This article details a method in which you can define one <code>Generic</code> instance for <em>all</em> of your existentially wrapped singletons. I use this technique because GHC cannot derive these instances for you using the standard “standalone deriving” instances. Let’s see how it works!</p>
+<p>First, let’s enable the extensions and import the modules we will need to use:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ot">{-# LANGUAGE DataKinds #-}</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ot">{-# LANGUAGE TemplateHaskell #-}</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="ot">{-# LANGUAGE TypeFamilies #-}</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="ot">{-# LANGUAGE UndecidableInstances #-}</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="ot">{-# OPTIONS_GHC -Wno-unused-top-binds #-}</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">GHC.Generics</span> ( <span class="dt">Generic</span>(..) )</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">Data.Singletons.TH</span> ( genSingletons )</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">Data.Singletons</span> ( <span class="dt">SingKind</span>(..), <span class="dt">SomeSing</span>(..) )</span></code></pre></div>
+<h2 id="creating-singletons">Creating Singletons</h2>
+<p>Now, let’s say you have a data type like the following (which you might recognize from this <a href="https://blog.jle.im/entry/introduction-to-singletons-1.html">tutorial about singletons</a>:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">DoorState</span> <span class="ot">=</span> <span class="dt">Opened</span> <span class="op">|</span> <span class="dt">Closed</span> <span class="op">|</span> <span class="dt">Locked</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">deriving</span> (<span class="dt">Generic</span>, <span class="dt">Show</span>)</span></code></pre></div>
+<p>And we need singletons for our type</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="op">$</span>(genSingletons ['<span class="dt">'DoorState</span>])</span></code></pre></div>
+<p>So now we have a singleton type</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- &gt;&gt;&gt; :info SDoorState</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- type role SDoorState nominal</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="co">-- type SDoorState :: DoorState -&gt; *</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co">-- data SDoorState a where</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="co">--   SOpened :: SDoorState 'Opened</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="co">--   SClosed :: SDoorState 'Closed</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="co">--   SLocked :: SDoorState 'Locked</span></span></code></pre></div>
+<p>And singletons provides us a way to wrap it with an existential type wrapper</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- &gt;&gt;&gt; :t SomeSing SOpened</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- &gt;&gt;&gt; :t SomeSing SClosed</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="co">-- &gt;&gt;&gt; :t SomeSing SLocked</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="co">-- SomeSing SOpened :: SomeSing DoorState</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="co">-- SomeSing SClosed :: SomeSing DoorState</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="co">-- SomeSing SLocked :: SomeSing DoorState</span></span></code></pre></div>
+<p>Notice that all 3 values have the same type, meaning that we have successfully hidden the phantom type parameter that was introduced by <code>SDoorState</code>.</p>
+<p>This will be the type that we derive a <code>Generic</code> instance for. If we try to simply make a standalone deriving instance, GHC gets mad at us.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- &gt;&gt;&gt; deriving instance Generic (SomeSing DoorState)</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- Can't make a derived instance of `Generic (SomeSing DoorState)':</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="co">--   SomeSing must be a vanilla data constructor</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="co">-- In the stand-alone deriving instance for</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="co">--   `Generic (SomeSing DoorState)'</span></span></code></pre></div>
+<p>This error is telling us that GHC’s mechanism for deriving <code>Generic</code> instances is not capable of deriving an instance for <code>SomeSing</code>. This is because <code>SomeSing</code> is a GADT that uses an existential type to hide exactly which <code>SDoorState</code> is contained within it, and <code>GHC.Generics</code> cannot handle existential types like this. So are we stuck? (Well no, but you knew that because what kind of post would this be if that was the end?)</p>
+<h2 id="background-on-ghc.generics">Background on <code>GHC.Generics</code></h2>
+<p>To come up with an idea of how we could derive a <code>Generic</code> instance for <code>SomeSing DoorState</code>, we need to have a good understanding of what a <code>Generic</code> instance actually is. Let’s take a look at the definition of the <code>Generic</code> class.</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> <span class="dt">Generic</span> a <span class="kw">where</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">type</span> <span class="dt">Rep</span><span class="ot"> ::</span> <span class="dt">Type</span> <span class="ot">-&gt;</span> <span class="dt">Type</span> <span class="ot">-&gt;</span> <span class="dt">Type</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>  <span class="kw">type</span> <span class="kw">family</span> <span class="dt">Rep</span> a</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="ot">  from ::</span> a <span class="ot">-&gt;</span> <span class="dt">Rep</span> a x</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="ot">  to ::</span> <span class="dt">Rep</span> a x <span class="ot">-&gt;</span> a</span></code></pre></div>
+<p>First, we have an associated type family, <code>Rep</code>. <code>Rep a x</code> is the “representation type” corresponding to the typical type <code>a</code>. A representation type and the values that inhabit it are built from a fixed set of building blocks defined in <code>GHC.Generics</code>. The class methods <code>from</code> and <code>to</code> allow you to convert between values of the original type and values of this representation type. It is important that round-tripping values through this representation does not change the value, so we need this representation type to have at least as many inhabitants as our actual type.</p>
+<h2 id="writing-an-instance-for-our-singleton-type">Writing an Instance for our Singleton Type</h2>
+<p>So the first step to writing a <code>Generic</code> instance for <code>SomeSing DoorState</code> is to choose a generic representation that will work for us. Our <code>SomeSing DoorState</code> has three possible values, and we want <code>from</code> and <code>to</code> to witness an isomorphism, so we need our representation to have three values as well. Thankfully, we have a natural choice: <code>DoorState</code>! However, we cannot directly use <code>DoorState</code> as our representation type for two reasons. Firstly, <code>DoorState</code> has kind Type, but <code>Rep a</code> is a Type -&gt; Type, so we need something higher-kinded. Secondly, <code>DoorState</code> is not made of the <code>Generic</code> building blocks provided by <code>GHC.Generics</code>. This means our <code>Generic</code> instance is not very useful. We couldn’t use it with other libraries that rely on the representation to be composed of those blocks, which is pretty much all of them! Thankfully, we can fix both the problems by using <code>Rep DoorState</code> for our representation instead. Because it is a representation type derived by GHC, it has the correct kind and is composed of the correct <code>Generic</code> types from <code>GHC.Generics</code>.</p>
+<p>The hand-written instance using <code>Rep DoorState</code> looks like this:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="kw">instance</span> <span class="dt">Generic</span> (<span class="dt">SomeSing</span> <span class="dt">DoorState</span>) <span class="kw">where</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">type</span> <span class="dt">Rep</span> (<span class="dt">SomeSing</span> <span class="dt">DoorState</span>) <span class="ot">=</span> <span class="dt">Rep</span> <span class="dt">DoorState</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="ot">  from ::</span> <span class="dt">SomeSing</span> <span class="dt">DoorState</span> <span class="ot">-&gt;</span> <span class="dt">Rep</span> (<span class="dt">SomeSing</span> <span class="dt">DoorState</span>) x</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>  from (<span class="dt">SomeSing</span> <span class="dt">SOpened</span>) <span class="ot">=</span> from <span class="dt">Opened</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>  from (<span class="dt">SomeSing</span> <span class="dt">SClosed</span>) <span class="ot">=</span> from <span class="dt">Closed</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>  from (<span class="dt">SomeSing</span> <span class="dt">SLocked</span>) <span class="ot">=</span> from <span class="dt">Locked</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="ot">  to ::</span> <span class="dt">Rep</span> (<span class="dt">SomeSing</span> <span class="dt">DoorState</span>) x <span class="ot">-&gt;</span> <span class="dt">SomeSing</span> <span class="dt">DoorState</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>  to rep <span class="ot">=</span> <span class="kw">case</span> to rep <span class="kw">of</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>    <span class="dt">Opened</span> <span class="ot">-&gt;</span> <span class="dt">SomeSing</span> <span class="dt">SOpened</span></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">Closed</span> <span class="ot">-&gt;</span> <span class="dt">SomeSing</span> <span class="dt">SClosed</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">Locked</span> <span class="ot">-&gt;</span> <span class="dt">SomeSing</span> <span class="dt">SLocked</span></span></code></pre></div>
+<div class="sourceCode" id="cb9"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co">-- &gt;&gt;&gt; :set -XDeriveAnyClass</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="co">-- &gt;&gt;&gt; import Data.Aeson</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="co">-- &gt;&gt;&gt; deriving instance ToJSON (SomeSing DoorState)</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="co">-- &gt;&gt;&gt; toJSON [SomeSing SOpened, SomeSing SClosed, SomeSing SLocked]</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="co">-- Array [String &quot;Opened&quot;,String &quot;Closed&quot;,String &quot;Locked&quot;]</span></span></code></pre></div>
+<p>Notice that we get JSON identical to the JSON we would have gotten if we used the derived <code>ToJSON</code> instance for <code>DoorState</code> directly. This makes sense; these two types are sharing the exact same <code>Generic</code> representation, so instances derived from this shared representation are indistinguishable. For many purposes, this is fine! However, we may explore a way to alter the representation to distinguish between the two types in a future post. For now, this is exactly the behavior that we want.</p>
+<h2 id="generalizing-our-instance-to-all-singletons">Generalizing our Instance to All Singletons</h2>
+<p>So we have an instance for <code>SomeSing DoorState</code>, but I promised a single instance for <em>all</em> your singletons. How do we accomplish this?</p>
+<p>First, let’s see if we can rewrite our <code>SomeSing DoorState</code> instance methods using more general functions provided by singletons:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode haskell"><code class="sourceCode haskell"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="kw">instance</span> <span class="dt">Generic</span> (<span class="dt">SomeSing</span> <span class="dt">DoorState</span>) <span class="kw">where</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">type</span> <span class="dt">Rep</span> (<span class="dt">SomeSing</span> <span class="dt">DoorState</span>) <span class="ot">=</span> <span class="dt">Rep</span> <span class="dt">DoorState</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="ot">  from ::</span> <span class="dt">SomeSing</span> <span class="dt">DoorState</span> <span class="ot">-&gt;</span> <span class="dt">Rep</span> <span class="dt">DoorState</span> x</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>  from (<span class="dt">SomeSing</span> kSing) <span class="ot">=</span> from (fromSing kSing)</span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="ot">  to ::</span> <span class="dt">Rep</span> <span class="dt">DoorState</span> x <span class="ot">-&gt;</span> <span class="dt">SomeSing</span> <span class="dt">DoorState</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>  to rep <span class="ot">=</span> toSing (to rep)</span></code></pre></div>
+<p>This instance uses the exact same logic as the previous one, but without explicit case matching. Instead it uses <code>fromSing</code> and <code>toSing</code> from the <code>SingKind</code> class to do the same thing we did before. The singletons library generates the <code>SingKind</code> instance for us, so we don’t have to do that!</p>
+<p>Now that our implementations are singleton agnostic, let’s generalize the instance to all singletons!</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">instance</span> (<span class="dt">SingKind</span> k, <span class="dt">Generic</span> (<span class="dt">Demote</span> k))</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    <span class="ot">=&gt;</span> <span class="dt">Generic</span> (<span class="dt">SomeSing</span> k) <span class="kw">where</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>  <span class="kw">type</span> <span class="dt">Rep</span> (<span class="dt">SomeSing</span> k) <span class="ot">=</span> <span class="dt">Rep</span> (<span class="dt">Demote</span> k)</span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="ot">  from ::</span> <span class="dt">SomeSing</span> k <span class="ot">-&gt;</span> <span class="dt">Rep</span> (<span class="dt">Demote</span> k) x</span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>  from (<span class="dt">SomeSing</span> kSing) <span class="ot">=</span> from (fromSing kSing)</span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="ot">  to ::</span> <span class="dt">Rep</span> (<span class="dt">Demote</span> k) x <span class="ot">-&gt;</span> <span class="dt">SomeSing</span> k</span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>  to rep <span class="ot">=</span> toSing (to rep)</span></code></pre></div>
+<p>We made several simple changes here. First, we replaced all occurrences of the <code>DoorState</code> <em>kind</em> with <code>k</code>, and we replaced all occurrences of the <code>DoorState</code> <em>type</em> with <code>Demote k</code>. <code>Demote</code> is a type family associated with the <code>SingKind</code> class, and it exists exactly for situations like this where we need to turn a singleton kind into the original singleton type. Once we did this GHC complained about two missing constraints, <code>SingKind k</code> and <code>Generic (Demote k)</code>, which we added. We need <code>SingKind k</code> because we are using the <code>toSing</code> and <code>fromSing</code> methods of the <code>SingKind</code> class, and we are also using the <code>Demote</code> type family from that class as well. We need <code>Generic (Demote k)</code> because we are using that instance’s representation type as our own, and naturally we use <code>from</code> and <code>to</code> from that instance as well. The <code>SingKind</code> and <code>Generic</code> type classes actually appear to be very similar!</p>
+<p>And with that, we are done! We have a <code>Generic</code> instance for all existentially wrapped singletons, and we can use this instance for serialization, equality checking, lenses, etc. Hooray!</p>
+    </section>
+</article>
+
+  </main>
+
+  <footer>
+    Site proudly generated by
+    <a href="http://jaspervdj.be/hakyll">Hakyll</a>
+  </footer>
+</body>
+
+</html>
