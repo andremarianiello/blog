@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Well∘Composed - Parsing JSON Data with Missing List Fields</title>
+  <link rel="stylesheet" href="../css/default.css" />
+  <link rel="icon" href="../images/favicon.png" />
+</head>
+
+<body>
+  <header>
+    <div class="logo">
+      <a href="../">Well∘Composed</a>
+    </div>
+    <nav>
+      <a href="../">Home</a>
+      <a href="../about.html">About</a>
+      <a href="../contact.html">Contact</a>
+      <a href="../archive.html">All Posts</a>
+    </nav>
+  </header>
+
+  <main role="main">
+    <h1>Parsing JSON Data with Missing List Fields</h1>
+    <article>
+    <section class="header">
+        Posted on December 28, 2024
+        
+    </section>
+    <section>
+        <h1 id="the-problem-of-the-missing-json-fields">The Problem of the Missing JSON Fields</h1>
+<p>I was recently working on a project that involved parsing JSON data generated from another system. Let’s say it looked something like this:</p>
+<details>
+<summary>
+Literate Haskell Preamble
+</summary>
+<div class="sourceCode" id="cb1"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ot">{-# LANGUAGE OverloadedStrings #-}</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="ot">{-# LANGUAGE DeriveAnyClass #-}</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="ot">{-# LANGUAGE DerivingVia #-}</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="ot">{-# LANGUAGE DuplicateRecordFields #-}</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="ot">{-# LANGUAGE TypeFamilies #-}</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="ot">{-# LANGUAGE UndecidableInstances #-}</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">Data.Aeson</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">Data.ByteString.Lazy</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">Data.Coerce</span> (coerce)</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">Data.Maybe</span> (fromMaybe)</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">Data.Kind</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="kw">import</span> <span class="dt">GHC.Generics</span></span></code></pre></div>
+</details>
+<div class="sourceCode" id="cb2"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="ot">rawData ::</span> <span class="dt">ByteString</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>rawData <span class="ot">=</span> <span class="st">&quot;{\&quot;name\&quot;: \&quot;Frank\&quot;, \&quot;favoriteNumbers\&quot;: [1, 2, 3]}&quot;</span></span></code></pre></div>
+<p>The data followed a preexisting schema, and I wanted to write data types with derived <code>FromJSON</code> instances to parse the data into.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">MyData</span> <span class="ot">=</span> <span class="dt">MyData</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>  {<span class="ot"> name ::</span> <span class="dt">String</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>  ,<span class="ot"> favoriteNumbers ::</span> [<span class="dt">Int</span>]</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">deriving</span> (<span class="dt">Show</span>, <span class="dt">Generic</span>)</span></code></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> <span class="kw">deriving</span> <span class="kw">instance</span> <span class="dt">FromJSON</span> <span class="dt">MyData</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> eitherDecode<span class="ot"> rawData ::</span> <span class="dt">Either</span> <span class="dt">String</span> <span class="dt">MyData</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="dt">Right</span> (<span class="dt">MyData</span> {name <span class="ot">=</span> <span class="st">&quot;Frank&quot;</span>, favoriteNumbers <span class="ot">=</span> [<span class="dv">1</span>,<span class="dv">2</span>,<span class="dv">3</span>]})</span></code></pre></div>
+<p>This is pretty standard stuff so far. The issue I ran into was that some of the fields in objects in this data set were optional arrays of values. This meant I needed to parse data that could look like this:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ot">rawDataWithoutField ::</span> <span class="dt">ByteString</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>rawDataWithoutField <span class="ot">=</span> <span class="st">&quot;{\&quot;name\&quot;: \&quot;Sandra\&quot;}&quot;</span></span></code></pre></div>
+<p>But the standard <code>FromJSON</code> instance doesn’t know how to handle this!</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> <span class="kw">deriving</span> <span class="kw">instance</span> <span class="dt">FromJSON</span> <span class="dt">MyData</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> eitherDecode<span class="ot"> rawDataWithoutField ::</span> <span class="dt">Either</span> <span class="dt">String</span> <span class="dt">MyData</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="dt">Left</span> <span class="st">&quot;Error in $: parsing Main.MyData(MyData) failed, key \&quot;favoriteNumbers\&quot; not found&quot;</span></span></code></pre></div>
+<p>This problem is definitely solvable, but what is the best way to solve it?</p>
+<h1 id="a-few-solutions-that-i-didnt-choose-and-why">A Few Solutions That I Didn’t Choose (and Why!)</h1>
+<details>
+<p>The most interesting problems don’t only have one best solution: usually there are multiple solutions with different pros and cons. These are the solutions I decided against using. You can skip this section if you want to get right to the solution I went with.</p>
+<h2 id="wrap-the-field-in-a-maybe">Wrap the Field in a <code>Maybe</code></h2>
+<p>Now, Aeson provides a standard way of handling omitted fields: wrap it in a <code>Maybe</code>!</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">MyMaybeData</span> <span class="ot">=</span> <span class="dt">MyMaybeData</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>  {<span class="ot"> name ::</span> <span class="dt">String</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>  ,<span class="ot"> favoriteNumbers ::</span> <span class="dt">Maybe</span> [<span class="dt">Int</span>]</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">deriving</span> (<span class="dt">Show</span>, <span class="dt">Generic</span>, <span class="dt">FromJSON</span>)</span></code></pre></div>
+<div class="sourceCode" id="cb8"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> eitherDecode<span class="ot"> rawData ::</span> <span class="dt">Either</span> <span class="dt">String</span> <span class="dt">MyMaybeData</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="dt">Right</span> (<span class="dt">MyMaybeData</span> {name <span class="ot">=</span> <span class="st">&quot;Frank&quot;</span>, favoriteNumbers <span class="ot">=</span> <span class="dt">Just</span> [<span class="dv">1</span>,<span class="dv">2</span>,<span class="dv">3</span>]})</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> eitherDecode<span class="ot"> rawDataWithoutField ::</span> <span class="dt">Either</span> <span class="dt">String</span> <span class="dt">MyMaybeData</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="dt">Right</span> (<span class="dt">MyMaybeData</span> {name <span class="ot">=</span> <span class="st">&quot;Sandra&quot;</span>, favoriteNumbers <span class="ot">=</span> <span class="dt">Nothing</span>})</span></code></pre></div>
+<p>Most of the time this solution is great, but I don’t love it in this case. The reason is that I wanted to treat the absence of the <code>favoriteNumbers</code> field as an empty list, but this technique would give me a <code>Nothing</code> value instead. <code>[Int]</code> already captures exactly the information that I want to store in my data type, so by introducing a possible <code>Nothing</code> value we introduce distinction between two cases that I don’t want people using my type to have to think about. For them, <code>Nothing</code> and <code>Just []</code> should be equivalent.</p>
+<h2 id="hand-written-fromjson-instance">Hand-Written <code>FromJSON</code> Instance</h2>
+<p>There is nothing stopping us from throwing out the derived <code>FromJSON</code> instance and hand-writing an instance that includes the <code>Maybe [Int] -&gt; [Int]</code> logic that we want.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> <span class="kw">instance</span> <span class="dt">FromJSON</span> <span class="dt">MyData</span> <span class="kw">where</span> parseJSON <span class="ot">=</span> withObject <span class="st">&quot;MyData&quot;</span> <span class="op">$</span> \v <span class="ot">-&gt;</span> <span class="dt">MyData</span> <span class="op">&lt;$&gt;</span> v <span class="op">.:</span> <span class="st">&quot;name&quot;</span> <span class="op">&lt;*&gt;</span> v <span class="op">.:?</span> <span class="st">&quot;favoriteNumbers&quot;</span> <span class="op">.!=</span> []</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> eitherDecode<span class="ot"> rawDataWithoutField ::</span> <span class="dt">Either</span> <span class="dt">String</span> <span class="dt">MyData</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="dt">Right</span> (<span class="dt">MyData</span> {name <span class="ot">=</span> <span class="st">&quot;Sandra&quot;</span>, favoriteNumbers <span class="ot">=</span> []})</span></code></pre></div>
+<p>The problem I had with this approach was that I actually have dozens of custom data types to handle, meaning that I would have to write dozens of custom instances by hand. If they all had their own unique logic that could definitely be the right approach, but I just needed this same exact logic for all of my instances. Ultimately I didn’t like this solution because of the amount of boilerplate required to define these instances, not to mention the amount of effort required to keep those instances up-to-date with future changes to the data types.</p>
+<h2 id="create-a-type-specifically-for-parsing-json-aka-a-dto">Create a Type Specifically for Parsing JSON (aka a DTO)</h2>
+<p>One alternative approach would be to provide a special data type for parsing the JSON, and then manually converting to the real domain datatype.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">MyDataDTO</span> <span class="ot">=</span> <span class="dt">MyDataDTO</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>  {<span class="ot"> name ::</span> <span class="dt">String</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>  ,<span class="ot"> favoriteNumbers ::</span> <span class="dt">Maybe</span> [<span class="dt">Int</span>]</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">deriving</span> (<span class="dt">Show</span>, <span class="dt">Generic</span>, <span class="dt">FromJSON</span>)</span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a><span class="ot">dtoToDomain ::</span> <span class="dt">MyDataDTO</span> <span class="ot">-&gt;</span> <span class="dt">MyData</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>dtoToDomain <span class="dt">MyDataDTO</span>{name, favoriteNumbers} <span class="ot">=</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">MyData</span>{name <span class="ot">=</span> name, favoriteNumbers <span class="ot">=</span> fromMaybe [] favoriteNumbers}</span></code></pre></div>
+<div class="sourceCode" id="cb11"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> <span class="kw">instance</span> <span class="dt">FromJSON</span> <span class="dt">MyData</span> <span class="kw">where</span> parseJSON json <span class="ot">=</span> dtoToDomain <span class="op">&lt;$&gt;</span> parseJSON json</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> eitherDecode<span class="ot"> rawDataWithoutField ::</span> <span class="dt">Either</span> <span class="dt">String</span> <span class="dt">MyData</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="dt">Right</span> (<span class="dt">MyData</span> {name <span class="ot">=</span> <span class="st">&quot;Sandra&quot;</span>, favoriteNumbers <span class="ot">=</span> []})</span></code></pre></div>
+<p>This approach is like the hand-written instances approach, except the instance logic is replaced with extra data types and conversion functions. I didn’t choose this approach because it’s similarities to the hand-written instance solution bring the same downsides.</p>
+<h2 id="use-a-higher-kinded-type-parameter">Use a Higher-Kinded Type Parameter</h2>
+<p>Yet another approach I considered was similar to the DTO approach, but to use a parameterized data type to represent both the DTO and domain type.</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">MyHKData</span> f <span class="ot">=</span> <span class="dt">MyHKData</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>  {<span class="ot"> name ::</span> <span class="dt">String</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>  ,<span class="ot"> favoriteNumbers ::</span> f [<span class="dt">Int</span>]</span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">deriving</span> (<span class="dt">Generic</span>)</span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="kw">deriving</span> <span class="kw">instance</span> <span class="dt">FromJSON</span> (f [<span class="dt">Int</span>]) <span class="ot">=&gt;</span> <span class="dt">FromJSON</span> (<span class="dt">MyHKData</span> f)</span></code></pre></div>
+<p>This approach has the upside of eliminating the DTO data type, but it has the downside of being highly invasive of our domain datatype. It introduces a parameter that we only need when parsing JSON, but we have to keep it and be aware of it everywhere we use our domain data type. I really just want to use the data type that I wrote!</p>
+<h2 id="use-a-custom-omittablelist">Use a Custom <code>OmittableList</code></h2>
+<p>The final approach that I ended up not using was to define a special <code>newtype</code></p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="kw">newtype</span> <span class="dt">OmittableList</span> a <span class="ot">=</span> <span class="dt">OmittableList</span> [a] <span class="kw">deriving</span> <span class="dt">Show</span></span></code></pre></div>
+<p>With a <code>FromJSON</code> instance that supports being omitted</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="kw">instance</span> <span class="dt">FromJSON</span> a <span class="ot">=&gt;</span> <span class="dt">FromJSON</span> (<span class="dt">OmittableList</span> a) <span class="kw">where</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>  parseJSON <span class="ot">=</span> <span class="fu">fmap</span> <span class="dt">OmittableList</span> <span class="op">.</span> parseJSON</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>  omittedField <span class="ot">=</span> <span class="dt">Just</span> (<span class="dt">OmittableList</span> [])</span></code></pre></div>
+<p>And then to use that <code>newtype</code> instead of a normal list in my type</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="kw">data</span> <span class="dt">MyDataOL</span> <span class="ot">=</span> <span class="dt">MyDataOL</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>  {<span class="ot"> name ::</span> <span class="dt">String</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>  ,<span class="ot"> favoriteNumbers ::</span> <span class="dt">OmittableList</span> <span class="dt">Int</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">deriving</span> (<span class="dt">Show</span>, <span class="dt">Generic</span>, <span class="dt">FromJSON</span>)</span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="co">-- &gt;&gt;&gt; eitherDecode rawDataWithoutField :: Either String MyDataOL</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="co">-- Right (MyDataOL {name = &quot;Sandra&quot;, favoriteNumbers = OmittableList []})</span></span></code></pre></div>
+<p>Of the solutions I have shown so far I like this one the most, but it is still more invasive than I like because it couples the type definition together with the JSON representation of our type.</p>
+</details>
+<h1 id="sowhat-solution-is-good-enough">So…What Solution is Good Enough??</h1>
+<p>So I rejected the above solutions because they didn’t satisfy one or both of the following criteria:</p>
+<ul>
+<li>Let me use my original data type, unchanged</li>
+<li>Don’t require too much boilerplate</li>
+</ul>
+<p>Eventually I settled on a solution based on GHC’s <code>DerivingVia</code> extension, which meets both my criteria. The main reason that this wasn’t the immediate first choice is because it requires working with <code>Generic</code> representations, which is a bit more complicated than the other approaches discussed above. However, I think it is worth it. Let’s walk through how this approach works step by step.</p>
+<h2 id="creating-a-newtype-wrapper">Creating a <code>Newtype</code> Wrapper</h2>
+<p>First, let’s derive our instance</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="kw">deriving</span> via <span class="dt">MyDataWithOmittableLists</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">instance</span> <span class="dt">FromJSON</span> <span class="dt">MyData</span></span></code></pre></div>
+<blockquote>
+<p>Note: This is the syntax for using <code>DerivingVia</code> with <code>StandaloneDeriving</code>, but <code>StandaloneDeriving</code> is not required! This approach works with a standard <code>DerivingVia</code> clause.</p>
+</blockquote>
+<p>This is saying that GHC should use the <code>FromJSON</code> instance from <code>MyDataWithOmmittableLists</code> to deriving a <code>FromJSON</code> instance for <code>MyData</code>. Because GHC implements this derived instance using <code>coerce</code> from <a href="https://hackage.haskell.org/package/base-4.21.0.0/docs/Data-Coerce.html"><code>Data.Coerce</code></a>, this will only work if <code>MyDataWithOmmittableLists</code> is representationally equal to <code>MyData</code>.</p>
+<p>So now we need to define <code>MyDataWithOmittableLists</code></p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> <span class="dt">MyDataWithOmittableLists</span> <span class="ot">=</span> <span class="dt">WithOmittableLists</span> <span class="dt">MyData</span></span></code></pre></div>
+<p>…but what is <code>WithOmittableLists</code>? We ultimately need our solution to scale up to dozens of types, so we can’t just define a single concrete type for <code>MyData</code>.</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="kw">newtype</span> <span class="dt">WithOmittableLists</span> a <span class="ot">=</span> <span class="dt">WithOmittableLists</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>  {<span class="ot"> unWithOmittableLists ::</span> a }</span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>  <span class="kw">deriving</span> <span class="dt">Show</span></span></code></pre></div>
+<p>Instead we will use a parameterized <code>newtype</code> wrapper. It is a <code>newtype</code> so that we get the representational equality we need, and we use the parameter to let us reuse this type to derive instances for all our types.</p>
+<h2 id="creating-our-generic-instance">Creating Our <code>Generic</code> Instance</h2>
+<p>Now we need a <code>FromJSON</code> instance for our wrapper. We want this instance to behave just like the deriving instance for the inner type, except it should behave as if the list fields of our inner type were wrapped in <code>Maybe</code>. This would let us omit them.</p>
+<p>Ideally, we could write this instance using <code>gFromJSON</code> from <code>Data.Aeson.Types.FromJSON</code>, but that module is not exposed to us. Our next best option is to include these extra <code>Maybe</code> wrappers in the <code>Generic</code> representation of <code>WithOmittableLists</code>, and then derive the <code>FromJSON</code> instance from the <code>Generic</code> instance.</p>
+<p>Let’s write the <code>Generic</code> instance first</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="kw">instance</span> (<span class="dt">Generic</span> a, <span class="dt">GOmittableLists</span> (<span class="dt">Rep</span> a))</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>    <span class="ot">=&gt;</span> <span class="dt">Generic</span> (<span class="dt">WithOmittableLists</span> a) <span class="kw">where</span></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>  <span class="kw">type</span> <span class="dt">Rep</span> (<span class="dt">WithOmittableLists</span> a) <span class="ot">=</span> <span class="dt">MaybeListsRep</span> (<span class="dt">Rep</span> a)</span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a>  from <span class="ot">=</span> withOmittableLists <span class="op">.</span> from <span class="op">@</span>a <span class="op">.</span> coerce</span>
+<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a>  to <span class="ot">=</span> coerce <span class="op">.</span> to <span class="op">@</span>a <span class="op">.</span> withoutOmittableLists</span>
+<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a><span class="kw">type</span> <span class="kw">family</span> <span class="dt">MaybeListsRep</span> (<span class="ot">rep ::</span> <span class="dt">Type</span> <span class="ot">-&gt;</span> <span class="dt">Type</span>) <span class="kw">where</span></span>
+<span id="cb19-8"><a href="#cb19-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">MaybeListsRep</span> (<span class="dt">Rec0</span> <span class="dt">String</span>) <span class="ot">=</span> <span class="dt">Rec0</span> <span class="dt">String</span></span>
+<span id="cb19-9"><a href="#cb19-9" aria-hidden="true" tabindex="-1"></a>  <span class="co">-- here is the type-level business logic</span></span>
+<span id="cb19-10"><a href="#cb19-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">MaybeListsRep</span> (<span class="dt">Rec0</span> [a]) <span class="ot">=</span> <span class="dt">Rec0</span> (<span class="dt">Maybe</span> [a])</span>
+<span id="cb19-11"><a href="#cb19-11" aria-hidden="true" tabindex="-1"></a>  <span class="dt">MaybeListsRep</span> (<span class="dt">M1</span> t m f) <span class="ot">=</span> <span class="dt">M1</span> t m (<span class="dt">MaybeListsRep</span> f)</span>
+<span id="cb19-12"><a href="#cb19-12" aria-hidden="true" tabindex="-1"></a>  <span class="dt">MaybeListsRep</span> (l <span class="op">:*:</span> r) <span class="ot">=</span> <span class="dt">MaybeListsRep</span> l <span class="op">:*:</span> <span class="dt">MaybeListsRep</span> r</span>
+<span id="cb19-13"><a href="#cb19-13" aria-hidden="true" tabindex="-1"></a>  <span class="dt">MaybeListsRep</span> (l <span class="op">:+:</span> r) <span class="ot">=</span> <span class="dt">MaybeListsRep</span> l <span class="op">:+:</span> <span class="dt">MaybeListsRep</span> r</span>
+<span id="cb19-14"><a href="#cb19-14" aria-hidden="true" tabindex="-1"></a>  <span class="dt">MaybeListsRep</span> rep <span class="ot">=</span> rep</span>
+<span id="cb19-15"><a href="#cb19-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-16"><a href="#cb19-16" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> <span class="dt">GOmittableLists</span> rep <span class="kw">where</span></span>
+<span id="cb19-17"><a href="#cb19-17" aria-hidden="true" tabindex="-1"></a><span class="ot">  withOmittableLists ::</span> rep x <span class="ot">-&gt;</span> <span class="dt">MaybeListsRep</span> rep x</span>
+<span id="cb19-18"><a href="#cb19-18" aria-hidden="true" tabindex="-1"></a><span class="ot">  withoutOmittableLists ::</span> <span class="dt">MaybeListsRep</span> rep x <span class="ot">-&gt;</span> rep x</span></code></pre></div>
+<p>So now we have a <code>Generic</code> instance that is built using a new class, <code>GOmittableLists</code>, and a closed type family, <code>MaybeListsRep</code>. <code>MaybeListsRep</code> maps a <code>Generic</code> representation to a similar representation where list fields are wrapped with <code>Maybe</code>. The <code>GOmittableLists</code> class provides the <code>withOomittableLists</code> and <code>withOmittableLists</code> methods, which map values between those two representation types.</p>
+<h2 id="creating-our-gomittablelists-instances">Creating Our <code>GOmittableLists</code> Instances</h2>
+<p>Now that we have a typeclass for <code>Maybe</code>-fying list fields of <code>Generic</code> representations, we need instances. Let’s get the uninteresting instances out of the way first.</p>
+<div class="sourceCode" id="cb20"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="kw">instance</span> (<span class="dt">GOmittableLists</span> f) <span class="ot">=&gt;</span> <span class="dt">GOmittableLists</span> (<span class="dt">M1</span> t m f) <span class="kw">where</span></span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>  withOmittableLists (<span class="dt">M1</span> a) <span class="ot">=</span> <span class="dt">M1</span> (withOmittableLists a)</span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>  withoutOmittableLists (<span class="dt">M1</span> a) <span class="ot">=</span> <span class="dt">M1</span> (withoutOmittableLists a)</span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a><span class="kw">instance</span> (<span class="dt">GOmittableLists</span> l, <span class="dt">GOmittableLists</span> r)</span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a>    <span class="ot">=&gt;</span> <span class="dt">GOmittableLists</span> (l <span class="op">:*:</span> r) <span class="kw">where</span></span>
+<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a>  withOmittableLists (l <span class="op">:*:</span> r) <span class="ot">=</span></span>
+<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a>    withOmittableLists l <span class="op">:*:</span> withOmittableLists r</span>
+<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a>  withoutOmittableLists (l <span class="op">:*:</span> r) <span class="ot">=</span></span>
+<span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a>    withoutOmittableLists l <span class="op">:*:</span> withoutOmittableLists r</span>
+<span id="cb20-11"><a href="#cb20-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-12"><a href="#cb20-12" aria-hidden="true" tabindex="-1"></a><span class="kw">instance</span> (<span class="dt">GOmittableLists</span> l, <span class="dt">GOmittableLists</span> r)</span>
+<span id="cb20-13"><a href="#cb20-13" aria-hidden="true" tabindex="-1"></a>    <span class="ot">=&gt;</span> <span class="dt">GOmittableLists</span> (l <span class="op">:+:</span> r) <span class="kw">where</span></span>
+<span id="cb20-14"><a href="#cb20-14" aria-hidden="true" tabindex="-1"></a>  withOmittableLists (<span class="dt">L1</span> a) <span class="ot">=</span> <span class="dt">L1</span> (withOmittableLists a)</span>
+<span id="cb20-15"><a href="#cb20-15" aria-hidden="true" tabindex="-1"></a>  withOmittableLists (<span class="dt">R1</span> a) <span class="ot">=</span> <span class="dt">R1</span> (withOmittableLists a)</span>
+<span id="cb20-16"><a href="#cb20-16" aria-hidden="true" tabindex="-1"></a>  withoutOmittableLists (<span class="dt">L1</span> a) <span class="ot">=</span> <span class="dt">L1</span> (withoutOmittableLists a)</span>
+<span id="cb20-17"><a href="#cb20-17" aria-hidden="true" tabindex="-1"></a>  withoutOmittableLists (<span class="dt">R1</span> a) <span class="ot">=</span> <span class="dt">R1</span> (withoutOmittableLists a)</span></code></pre></div>
+<p>These are uninteresting because they simply delegate the <code>Maybe</code> wrapping logic to other instances by following the <code>Generic</code> representation structure.</p>
+<p>Let’s look at the actual <code>Maybe</code>-wrapping logic now</p>
+<div class="sourceCode" id="cb21"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="kw">instance</span> <span class="ot">{-# OVERLAPPABLE #-}</span> (<span class="dt">MaybeListsRep</span> (<span class="dt">Rec0</span> a) <span class="op">~</span> <span class="dt">Rec0</span> a)</span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>    <span class="ot">=&gt;</span> <span class="dt">GOmittableLists</span> (<span class="dt">Rec0</span> a) <span class="kw">where</span></span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>  withOmittableLists (<span class="dt">K1</span> a) <span class="ot">=</span> <span class="dt">K1</span> a</span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a>  withoutOmittableLists (<span class="dt">K1</span> a) <span class="ot">=</span> <span class="dt">K1</span> a</span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a><span class="kw">instance</span> <span class="ot">{-# OVERLAPPABLE #-}</span> (<span class="dt">MaybeListsRep</span> (<span class="dt">Rec0</span> [a]) <span class="op">~</span> <span class="dt">Rec0</span> (<span class="dt">Maybe</span> [a]))</span>
+<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a>    <span class="ot">=&gt;</span> <span class="dt">GOmittableLists</span> (<span class="dt">Rec0</span> [a]) <span class="kw">where</span></span>
+<span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a>  withOmittableLists (<span class="dt">K1</span> a) <span class="ot">=</span> <span class="dt">K1</span> (<span class="dt">Just</span> a)</span>
+<span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a>  withoutOmittableLists (<span class="dt">K1</span> a) <span class="ot">=</span> <span class="dt">K1</span> (fromMaybe [] a)</span>
+<span id="cb21-10"><a href="#cb21-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-11"><a href="#cb21-11" aria-hidden="true" tabindex="-1"></a><span class="kw">instance</span> <span class="ot">{-# OVERLAPPING #-}</span> (<span class="dt">MaybeListsRep</span> (<span class="dt">Rec0</span> <span class="dt">String</span>) <span class="op">~</span> <span class="dt">Rec0</span> <span class="dt">String</span>)</span>
+<span id="cb21-12"><a href="#cb21-12" aria-hidden="true" tabindex="-1"></a>    <span class="ot">=&gt;</span> <span class="dt">GOmittableLists</span> (<span class="dt">Rec0</span> <span class="dt">String</span>) <span class="kw">where</span></span>
+<span id="cb21-13"><a href="#cb21-13" aria-hidden="true" tabindex="-1"></a>  withOmittableLists (<span class="dt">K1</span> a) <span class="ot">=</span> <span class="dt">K1</span> a</span>
+<span id="cb21-14"><a href="#cb21-14" aria-hidden="true" tabindex="-1"></a>  withoutOmittableLists (<span class="dt">K1</span> a) <span class="ot">=</span> <span class="dt">K1</span> a</span></code></pre></div>
+<p>With these three instances we can handle the actual fields, <code>Rec0</code>, of the representation type. The <code>Rec0 a</code> instance is used when mapping non-list fields, so it doesn’t do any maybe wrapping. The <code>Rec0 [a]</code> instance is used when mapping list fields, so we wrap and unwrap the value. This is the instance with the actual logic happening. The final <code>Rec0 String</code> instance is provided so that we treat <code>String</code> fields like non-list fields because we do not want <code>String</code> fields to be omittable, just list fields of other types. After all, the <code>name</code> field is required!</p>
+<p>Now we can finally test our <code>Generic</code> instance! Let’s look at the <code>Generic</code> representation of <code>MyData</code> first</p>
+<div class="sourceCode" id="cb22"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> <span class="op">:</span>kind<span class="op">!</span> <span class="dt">Rep</span> <span class="dt">MyData</span></span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a><span class="dt">Rep</span> <span class="dt">MyData</span><span class="ot"> ::</span> <span class="op">*</span> <span class="ot">-&gt;</span> <span class="op">*</span></span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a><span class="ot">=</span> <span class="dt">M1</span></span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">D</span></span>
+<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a>    (<span class="dt">'MetaData</span></span>
+<span id="cb22-6"><a href="#cb22-6" aria-hidden="true" tabindex="-1"></a>       <span class="st">&quot;MyData&quot;</span></span>
+<span id="cb22-7"><a href="#cb22-7" aria-hidden="true" tabindex="-1"></a>       <span class="st">&quot;Main&quot;</span></span>
+<span id="cb22-8"><a href="#cb22-8" aria-hidden="true" tabindex="-1"></a>       <span class="st">&quot;posts-0.1.0.0-inplace-aeson-omittable-fields&quot;</span></span>
+<span id="cb22-9"><a href="#cb22-9" aria-hidden="true" tabindex="-1"></a>       <span class="dt">'False</span>)</span>
+<span id="cb22-10"><a href="#cb22-10" aria-hidden="true" tabindex="-1"></a>    (<span class="dt">M1</span></span>
+<span id="cb22-11"><a href="#cb22-11" aria-hidden="true" tabindex="-1"></a>       <span class="dt">C</span></span>
+<span id="cb22-12"><a href="#cb22-12" aria-hidden="true" tabindex="-1"></a>       (<span class="dt">'MetaCons</span> <span class="st">&quot;MyData&quot;</span> <span class="dt">'PrefixI</span> <span class="dt">'True</span>)</span>
+<span id="cb22-13"><a href="#cb22-13" aria-hidden="true" tabindex="-1"></a>       (<span class="dt">M1</span></span>
+<span id="cb22-14"><a href="#cb22-14" aria-hidden="true" tabindex="-1"></a>          <span class="dt">S</span></span>
+<span id="cb22-15"><a href="#cb22-15" aria-hidden="true" tabindex="-1"></a>          (<span class="dt">'MetaSel</span></span>
+<span id="cb22-16"><a href="#cb22-16" aria-hidden="true" tabindex="-1"></a>             (<span class="dt">'Just</span> <span class="st">&quot;name&quot;</span>)</span>
+<span id="cb22-17"><a href="#cb22-17" aria-hidden="true" tabindex="-1"></a>             <span class="dt">'NoSourceUnpackedness</span></span>
+<span id="cb22-18"><a href="#cb22-18" aria-hidden="true" tabindex="-1"></a>             <span class="dt">'NoSourceStrictness</span></span>
+<span id="cb22-19"><a href="#cb22-19" aria-hidden="true" tabindex="-1"></a>             <span class="dt">'DecidedLazy</span>)</span>
+<span id="cb22-20"><a href="#cb22-20" aria-hidden="true" tabindex="-1"></a>          (<span class="dt">K1</span> <span class="dt">R</span> [<span class="dt">Char</span>])</span>
+<span id="cb22-21"><a href="#cb22-21" aria-hidden="true" tabindex="-1"></a>        <span class="op">:*:</span> <span class="dt">M1</span></span>
+<span id="cb22-22"><a href="#cb22-22" aria-hidden="true" tabindex="-1"></a>              <span class="dt">S</span></span>
+<span id="cb22-23"><a href="#cb22-23" aria-hidden="true" tabindex="-1"></a>              (<span class="dt">'MetaSel</span></span>
+<span id="cb22-24"><a href="#cb22-24" aria-hidden="true" tabindex="-1"></a>                 (<span class="dt">'Just</span> <span class="st">&quot;favoriteNumbers&quot;</span>)</span>
+<span id="cb22-25"><a href="#cb22-25" aria-hidden="true" tabindex="-1"></a>                 <span class="dt">'NoSourceUnpackedness</span></span>
+<span id="cb22-26"><a href="#cb22-26" aria-hidden="true" tabindex="-1"></a>                 <span class="dt">'NoSourceStrictness</span></span>
+<span id="cb22-27"><a href="#cb22-27" aria-hidden="true" tabindex="-1"></a>                 <span class="dt">'DecidedLazy</span>)</span>
+<span id="cb22-28"><a href="#cb22-28" aria-hidden="true" tabindex="-1"></a>              (<span class="dt">K1</span> <span class="dt">R</span> [<span class="dt">Int</span>])))</span></code></pre></div>
+<p>And we can compare that to the <code>Generic</code> representation for <code>MyDataWithOmittableLists</code></p>
+<div class="sourceCode" id="cb23"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> <span class="op">:</span>kind<span class="op">!</span> <span class="dt">Rep</span> <span class="dt">MyDataWithOmittableLists</span></span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a><span class="dt">Rep</span> <span class="dt">MyDataWithOmittableLists</span><span class="ot"> ::</span> <span class="op">*</span> <span class="ot">-&gt;</span> <span class="op">*</span></span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a><span class="ot">=</span> <span class="dt">M1</span></span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a>    <span class="dt">D</span></span>
+<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a>    (<span class="dt">'MetaData</span></span>
+<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a>       <span class="st">&quot;MyData&quot;</span></span>
+<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a>       <span class="st">&quot;Main&quot;</span></span>
+<span id="cb23-8"><a href="#cb23-8" aria-hidden="true" tabindex="-1"></a>       <span class="st">&quot;posts-0.1.0.0-inplace-aeson-omittable-fields&quot;</span></span>
+<span id="cb23-9"><a href="#cb23-9" aria-hidden="true" tabindex="-1"></a>       <span class="dt">'False</span>)</span>
+<span id="cb23-10"><a href="#cb23-10" aria-hidden="true" tabindex="-1"></a>    (<span class="dt">M1</span></span>
+<span id="cb23-11"><a href="#cb23-11" aria-hidden="true" tabindex="-1"></a>       <span class="dt">C</span></span>
+<span id="cb23-12"><a href="#cb23-12" aria-hidden="true" tabindex="-1"></a>       (<span class="dt">'MetaCons</span> <span class="st">&quot;MyData&quot;</span> <span class="dt">'PrefixI</span> <span class="dt">'True</span>)</span>
+<span id="cb23-13"><a href="#cb23-13" aria-hidden="true" tabindex="-1"></a>       (<span class="dt">M1</span></span>
+<span id="cb23-14"><a href="#cb23-14" aria-hidden="true" tabindex="-1"></a>          <span class="dt">S</span></span>
+<span id="cb23-15"><a href="#cb23-15" aria-hidden="true" tabindex="-1"></a>          (<span class="dt">'MetaSel</span></span>
+<span id="cb23-16"><a href="#cb23-16" aria-hidden="true" tabindex="-1"></a>             (<span class="dt">'Just</span> <span class="st">&quot;name&quot;</span>)</span>
+<span id="cb23-17"><a href="#cb23-17" aria-hidden="true" tabindex="-1"></a>             <span class="dt">'NoSourceUnpackedness</span></span>
+<span id="cb23-18"><a href="#cb23-18" aria-hidden="true" tabindex="-1"></a>             <span class="dt">'NoSourceStrictness</span></span>
+<span id="cb23-19"><a href="#cb23-19" aria-hidden="true" tabindex="-1"></a>             <span class="dt">'DecidedLazy</span>)</span>
+<span id="cb23-20"><a href="#cb23-20" aria-hidden="true" tabindex="-1"></a>          (<span class="dt">K1</span> <span class="dt">R</span> [<span class="dt">Char</span>])</span>
+<span id="cb23-21"><a href="#cb23-21" aria-hidden="true" tabindex="-1"></a>        <span class="op">:*:</span> <span class="dt">M1</span></span>
+<span id="cb23-22"><a href="#cb23-22" aria-hidden="true" tabindex="-1"></a>              <span class="dt">S</span></span>
+<span id="cb23-23"><a href="#cb23-23" aria-hidden="true" tabindex="-1"></a>              (<span class="dt">'MetaSel</span></span>
+<span id="cb23-24"><a href="#cb23-24" aria-hidden="true" tabindex="-1"></a>                 (<span class="dt">'Just</span> <span class="st">&quot;favoriteNumbers&quot;</span>)</span>
+<span id="cb23-25"><a href="#cb23-25" aria-hidden="true" tabindex="-1"></a>                 <span class="dt">'NoSourceUnpackedness</span></span>
+<span id="cb23-26"><a href="#cb23-26" aria-hidden="true" tabindex="-1"></a>                 <span class="dt">'NoSourceStrictness</span></span>
+<span id="cb23-27"><a href="#cb23-27" aria-hidden="true" tabindex="-1"></a>                 <span class="dt">'DecidedLazy</span>)</span>
+<span id="cb23-28"><a href="#cb23-28" aria-hidden="true" tabindex="-1"></a>              (<span class="dt">K1</span> <span class="dt">R</span> (<span class="dt">Maybe</span> [<span class="dt">Int</span>]))))</span></code></pre></div>
+<p>Focus on the last line of each representation and notice that <code>K1 R [Int]</code> in the first has been replaced by <code>K1 R (Maybe [Int]))</code> in the second. This is the exact change we wanted to make to the representation! The hardest part is now complete and we are almost done!</p>
+<h2 id="creating-our-fromjson-instance">Creating Our <code>FromJSON</code> Instance</h2>
+<p>We now have a wrapper type with a custom <code>Generic</code> instance. We wrapped the list fields of its representation with <code>Maybe</code> so that parsing would still succeed even if those fields were not present. All the remains is to derive our <code>FromJSON</code> instance using the underlying <code>Generic</code> instance.</p>
+<div class="sourceCode" id="cb24"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="kw">deriving</span> anyclass <span class="kw">instance</span></span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>  ( <span class="dt">Generic</span> (<span class="dt">WithOmittableLists</span> <span class="dt">MyData</span>)</span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>  , <span class="dt">GFromJSON</span> <span class="dt">Zero</span> (<span class="dt">Rep</span> (<span class="dt">WithOmittableLists</span> <span class="dt">MyData</span>))</span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a>  ) <span class="ot">=&gt;</span> <span class="dt">FromJSON</span> (<span class="dt">WithOmittableLists</span> <span class="dt">MyData</span>) </span></code></pre></div>
+<p>The default implementations of the members of <code>FromJSON</code> are written using the type’s <code>Generic</code> instance, meaning we can derive the <code>FromJSON</code> instance we want using the <code>anyclass</code> deriving strategy. The <code>newtype</code> deriving strategy is also available, but trying to use such an instance would fail to terminate as the <code>FromJSON (WithOmittableLists a)</code> instance and the <code>FromJSON MyData</code> instance call each other infinitely.</p>
+<p>Let’s try out our shiny new instance!</p>
+<div class="sourceCode" id="cb25"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> eitherDecode<span class="ot"> rawDataWithoutField ::</span> <span class="dt">Either</span> <span class="dt">String</span> (<span class="dt">WithOmittableLists</span> <span class="dt">MyData</span>)</span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a><span class="dt">Right</span> (<span class="dt">WithOmittableLists</span> {unWithOmittableLists <span class="ot">=</span> <span class="dt">MyData</span> {name <span class="ot">=</span> <span class="st">&quot;Sandra&quot;</span>, favoriteNumbers <span class="ot">=</span> []}})</span></code></pre></div>
+<p>Perfect! And thanks to the fact that we derived <code>FromJSON MyData</code> via this instance earlier, we can parse directly in <code>MyData</code></p>
+<div class="sourceCode" id="cb26"><pre class="sourceCode haskell literate"><code class="sourceCode haskell"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="op">&gt;&gt;&gt;</span> eitherDecode<span class="ot"> rawDataWithoutField ::</span> <span class="dt">Either</span> <span class="dt">String</span> <span class="dt">MyData</span></span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a><span class="dt">Right</span> (<span class="dt">MyData</span> {name <span class="ot">=</span> <span class="st">&quot;Sandra&quot;</span>, favoriteNumbers <span class="ot">=</span> []})</span></code></pre></div>
+<p>Success!</p>
+<h1 id="so-are-we-done">So Are We Done?</h1>
+<p>We have achieved everything we wanted to achieve at the beginning; we can parse JSON data with missing list fields into our own data type, using a derived instance, without have to do any manually conversions between wrapper types. We also learned a technique for manipulating <code>Generic</code> instances in order to derive <code>FromJSON</code> instances with special behavior.</p>
+<p>But is that good enough? What if I have a type with some omittable list fields, and some required list fields? What if I have a type with omittable fields of other types? The good news is that this technique can be extended to handle those cases as well. The bad news is that this post is already incredibly long, so I will have to save those for another post. Goodbye!</p>
+    </section>
+</article>
+
+  </main>
+
+  <footer>
+    Site proudly generated by
+    <a href="http://jaspervdj.be/hakyll">Hakyll</a>
+  </footer>
+</body>
+
+</html>
